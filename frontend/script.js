@@ -3,7 +3,7 @@
 // BLUEWATCH - FRONTEND JAVASCRIPT
 // ======================================
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL =  "https://bluewatch-6nwk.onrender.com";
 
 
 // ======================================

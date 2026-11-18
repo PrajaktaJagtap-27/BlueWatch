@@ -1,6 +1,7 @@
 
 import pandas as pd
 import joblib
+import matplotlib.pyplot as plt
 
 from pathlib import Path
 
@@ -10,10 +11,12 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
+
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
-    confusion_matrix
+    confusion_matrix,
+    ConfusionMatrixDisplay
 )
 
 # =====================================
@@ -27,6 +30,10 @@ DATASET_PATH = (
 )
 
 MODEL_PATH = BASE_DIR / "marine_model.joblib"
+
+CONFUSION_MATRIX_PATH = (
+    BASE_DIR / "confusion_matrix.png"
+)
 
 # =====================================
 # 2. LOAD DATASET
@@ -71,7 +78,10 @@ FEATURES = [
 
 TARGET = "Final_Prediction"
 
-# Check dataset columns
+# =====================================
+# 4. CHECK DATASET COLUMNS
+# =====================================
+
 required_columns = FEATURES + [TARGET]
 
 missing_columns = [
@@ -85,7 +95,7 @@ if missing_columns:
     )
 
 # =====================================
-# 4. PREPARE DATA
+# 5. PREPARE DATA
 # =====================================
 
 df = df.dropna(subset=[TARGET]).copy()
@@ -99,7 +109,7 @@ print("\nPrediction Classes:")
 print(y.value_counts())
 
 # =====================================
-# 5. CATEGORICAL AND NUMERICAL DATA
+# 6. CATEGORICAL AND NUMERICAL DATA
 # =====================================
 
 categorical_features = [
@@ -115,7 +125,7 @@ numerical_features = [
 ]
 
 # =====================================
-# 6. DATA PREPROCESSING
+# 7. DATA PREPROCESSING
 # =====================================
 
 numerical_pipeline = Pipeline([
@@ -150,7 +160,7 @@ preprocessor = ColumnTransformer([
 ])
 
 # =====================================
-# 7. RANDOM FOREST CLASSIFIER
+# 8. RANDOM FOREST CLASSIFIER
 # =====================================
 
 classifier = RandomForestClassifier(
@@ -166,7 +176,7 @@ model = Pipeline([
 ])
 
 # =====================================
-# 8. TRAIN AND TEST SPLIT
+# 9. TRAIN AND TEST SPLIT
 # =====================================
 
 X_train, X_test, y_train, y_test = train_test_split(
@@ -181,7 +191,7 @@ print("\nTraining Records:", len(X_train))
 print("Testing Records:", len(X_test))
 
 # =====================================
-# 9. TRAIN MODEL
+# 10. TRAIN MODEL
 # =====================================
 
 print("\nTraining Random Forest Model...")
@@ -191,7 +201,7 @@ model.fit(X_train, y_train)
 print("Training Completed Successfully!")
 
 # =====================================
-# 10. MODEL EVALUATION
+# 11. MODEL EVALUATION
 # =====================================
 
 y_pred = model.predict(X_test)
@@ -212,12 +222,66 @@ print(
     )
 )
 
+# =====================================
+# 12. CONFUSION MATRIX
+# =====================================
+
 print("\nConfusion Matrix:")
 
-print(confusion_matrix(y_test, y_pred))
+cm = confusion_matrix(
+    y_test,
+    y_pred,
+    labels=model.classes_
+)
+
+print(cm)
 
 # =====================================
-# 11. SAVE TRAINED MODEL
+# 13. VISUAL CONFUSION MATRIX
+# =====================================
+
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm,
+    display_labels=model.classes_
+)
+
+fig, ax = plt.subplots(figsize=(9, 7))
+
+disp.plot(
+    ax=ax,
+    cmap="Blues",
+    values_format="d",
+    colorbar=True
+)
+
+plt.title(
+    "BlueWatch - Random Forest Confusion Matrix"
+)
+
+plt.xlabel("Predicted Label")
+plt.ylabel("Actual Label")
+
+plt.xticks(rotation=30, ha="right")
+
+plt.tight_layout()
+
+plt.savefig(
+    CONFUSION_MATRIX_PATH,
+    dpi=300,
+    bbox_inches="tight"
+)
+
+print(
+    "\nConfusion Matrix Image Saved:",
+    CONFUSION_MATRIX_PATH
+)
+
+plt.show()
+
+plt.close(fig)
+
+# =====================================
+# 14. SAVE TRAINED MODEL
 # =====================================
 
 joblib.dump(model, MODEL_PATH)
