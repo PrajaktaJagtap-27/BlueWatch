@@ -1,5 +1,6 @@
 
 import httpx
+import time
 
 MARINE_API = "https://marine-api.open-meteo.com/v1/marine"
 WEATHER_API = "https://api.open-meteo.com/v1/forecast"
@@ -12,6 +13,10 @@ COASTAL_LOCATIONS = {
     "Visakhapatnam": {"latitude": 17.6868, "longitude": 83.2185}
 }
 
+# Store successful responses for 15 minutes
+CACHE_DURATION = 900
+weather_cache = {}
+
 
 async def get_marine_weather(location: str):
 
@@ -19,6 +24,12 @@ async def get_marine_weather(location: str):
         raise ValueError(
             "Unsupported location. Choose Mumbai, Goa, Chennai, Kochi or Visakhapatnam."
         )
+
+    # Check cache before calling external APIs
+    cached = weather_cache.get(location)
+
+    if cached and time.monotonic() - cached["time"] < CACHE_DURATION:
+        return cached["data"]
 
     coordinates = COASTAL_LOCATIONS[location]
 
@@ -51,29 +62,53 @@ async def get_marine_weather(location: str):
 
     timeout = httpx.Timeout(20.0)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
 
-        marine_response = await client.get(
-            MARINE_API, params=marine_params
+            marine_response = await client.get(
+                MARINE_API, params=marine_params
+            )
+            marine_response.raise_for_status()
+
+            weather_response = await client.get(
+                WEATHER_API, params=weather_params
+            )
+            weather_response.raise_for_status()
+
+            marine_data = marine_response.json()
+            weather_data = weather_response.json()
+
+        result = {
+            "success": True,
+            "project": "BlueWatch",
+            "location": location,
+            "coordinates": coordinates,
+            "current_marine_conditions": marine_data.get("current", {}),
+            "seven_day_marine_forecast": marine_data.get("daily", {}),
+            "current_weather": weather_data.get("current", {}),
+            "weather_units": weather_data.get("current_units", {})
+        }
+
+        # Save successful response in cache
+        weather_cache[location] = {
+            "time": time.monotonic(),
+            "data": result
+        }
+
+        return result
+
+    except httpx.HTTPStatusError as error:
+
+        if error.response.status_code == 429:
+            raise Exception(
+                "Weather API rate limit reached. Please wait 15 minutes and try again."
+            )
+
+        raise Exception(
+            f"Weather service error: HTTP {error.response.status_code}"
         )
 
-        weather_response = await client.get(
-            WEATHER_API, params=weather_params
+    except httpx.RequestError:
+        raise Exception(
+            "Unable to connect to the weather service. Please try again later."
         )
-
-        marine_response.raise_for_status()
-        weather_response.raise_for_status()
-
-        marine_data = marine_response.json()
-        weather_data = weather_response.json()
-
-    return {
-        "success": True,
-        "project": "BlueWatch",
-        "location": location,
-        "coordinates": coordinates,
-        "current_marine_conditions": marine_data.get("current", {}),
-        "seven_day_marine_forecast": marine_data.get("daily", {}),
-        "current_weather": weather_data.get("current", {}),
-        "weather_units": weather_data.get("current_units", {})
-    }
