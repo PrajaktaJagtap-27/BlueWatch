@@ -108,7 +108,28 @@ async def get_marine_weather(location: str):
             f"Weather service error: HTTP {error.response.status_code}"
         )
 
-    except httpx.RequestError:
-        raise Exception(
-            "Unable to connect to the weather service. Please try again later."
+    
+    except httpx.HTTPStatusError as error:
+
+        print(
+            f"Weather API HTTP error: "
+            f"{error.response.status_code} - {error.response.text}"
         )
+
+        if error.response.status_code == 429:
+            raise Exception(
+                "Weather API rate limit reached. Please wait and try again."
+            )
+
+        raise Exception(
+            f"Weather service error: HTTP {error.response.status_code}"
+        )
+
+    except httpx.RequestError as error:
+
+        print(f"Weather API connection error: {repr(error)}")
+
+        raise Exception(
+            f"Weather API connection failed: {type(error).__name__}: {error}"
+        )
+
