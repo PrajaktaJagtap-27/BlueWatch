@@ -13,7 +13,6 @@ COASTAL_LOCATIONS = {
     "Visakhapatnam": {"latitude": 17.6868, "longitude": 83.2185}
 }
 
-# Store successful responses for 15 minutes
 CACHE_DURATION = 900
 weather_cache = {}
 
@@ -21,11 +20,8 @@ weather_cache = {}
 async def get_marine_weather(location: str):
 
     if location not in COASTAL_LOCATIONS:
-        raise ValueError(
-            "Unsupported location. Choose Mumbai, Goa, Chennai, Kochi or Visakhapatnam."
-        )
+        raise ValueError("Unsupported coastal location.")
 
-    # Check cache before calling external APIs
     cached = weather_cache.get(location)
 
     if cached and time.monotonic() - cached["time"] < CACHE_DURATION:
@@ -56,27 +52,41 @@ async def get_marine_weather(location: str):
             "temperature_2m,relative_humidity_2m,"
             "wind_speed_10m,wind_direction_10m,weather_code"
         ),
-        "timezone": "Asia/Kolkata",
-        "forecast_days": 7
+        "timezone": "Asia/Kolkata"
     }
 
-    timeout = httpx.Timeout(20.0)
+    async with httpx.AsyncClient(timeout=20.0) as client:
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-
+        # Fetch marine data first
+        try:
             marine_response = await client.get(
                 MARINE_API, params=marine_params
             )
             marine_response.raise_for_status()
+            marine_data = marine_response.json()
 
+        except httpx.HTTPError as error:
+            print("Marine API error:", repr(error))
+
+            if cached:
+                return cached["data"]
+
+            raise Exception("Marine data is temporarily unavailable.")
+
+        # Fetch weather separately
+        weather_data = {}
+        weather_available = True
+
+        try:
             weather_response = await client.get(
                 WEATHER_API, params=weather_params
             )
             weather_response.raise_for_status()
-
-            marine_data = marine_response.json()
             weather_data = weather_response.json()
+
+        except httpx.HTTPError as error:
+            print("Weather API error:", repr(error))
+            weather_available = False
 
         result = {
             "success": True,
@@ -86,50 +96,18 @@ async def get_marine_weather(location: str):
             "current_marine_conditions": marine_data.get("current", {}),
             "seven_day_marine_forecast": marine_data.get("daily", {}),
             "current_weather": weather_data.get("current", {}),
-            "weather_units": weather_data.get("current_units", {})
+            "weather_units": weather_data.get("current_units", {}),
+            "weather_available": weather_available,
+            "weather_message": (
+                "Weather information is temporarily unavailable."
+                if not weather_available else "Weather data loaded successfully."
+            )
         }
 
-        # Save successful response in cache
+        # Cache the successful marine response
         weather_cache[location] = {
             "time": time.monotonic(),
             "data": result
         }
 
         return result
-
-    except httpx.HTTPStatusError as error:
-
-        if error.response.status_code == 429:
-            raise Exception(
-                "Weather API rate limit reached. Please wait 15 minutes and try again."
-            )
-
-        raise Exception(
-            f"Weather service error: HTTP {error.response.status_code}"
-        )
-
-    
-    except httpx.HTTPStatusError as error:
-
-        print(
-            f"Weather API HTTP error: "
-            f"{error.response.status_code} - {error.response.text}"
-        )
-
-        if error.response.status_code == 429:
-            raise Exception(
-                "Weather API rate limit reached. Please wait and try again."
-            )
-
-        raise Exception(
-            f"Weather service error: HTTP {error.response.status_code}"
-        )
-
-    except httpx.RequestError as error:
-
-        print(f"Weather API connection error: {repr(error)}")
-
-        raise Exception(
-            f"Weather API connection failed: {type(error).__name__}: {error}"
-        )
-
